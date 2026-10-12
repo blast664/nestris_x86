@@ -86,11 +86,15 @@ add_executable(nestris_x86
         src/assets.cpp
         src/drawing_utils.cpp
         src/drawers/olc_drawer.cpp
+        src/frame_processors/game_mode_screen_processor.cpp
         src/frame_processors/game_processor.cpp
+        src/frame_processors/history_screen_processor.cpp
         src/frame_processors/level_screen_processor.cpp
         src/frame_processors/option_screen_processor.cpp
         src/frame_processors/keyboard_config_processor.cpp
+        src/frame_processors/lag_test_processor.cpp
         #src/frame_processors/gamepad_config_processor.cpp
+        src/game_history.cpp
         src/game_logic.cpp
         src/game_renderer.cpp
         src/input_devices/olc_keyboard.cpp

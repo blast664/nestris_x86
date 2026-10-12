@@ -1,3 +1,4 @@
+#include <random>
 #include <vector>
 
 #include "das.hpp"
@@ -40,7 +41,7 @@ void clearLine(const int row, GameState<> &state);
 
 std::vector<int> checkForLineClears(const GameState<> &state);
 
-void updateEntryDelayForLineClear(int &delay_counter);
+void updateEntryDelayForLineClear(int &delay_counter, std::mt19937 &random_engine);
 
 void updateScoreAndLevel(const int line_clears, const sound::SoundPlayer &sound_player,
                          GameState<> &state);

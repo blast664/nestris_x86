@@ -31,7 +31,9 @@ struct GameState {
         press_down_lock{},
         press_down_counter{},
         viz_wall_charge_frame_count{},
-        high_scores{{1000, "HOWARD"}} {}
+        top_score{},
+        start_score{},
+        floor_height{} {}
   // clang-format on
 
   using Grid = std::array<std::array<int, H>, W>;
@@ -51,7 +53,9 @@ struct GameState {
   bool press_down_lock;
   int press_down_counter;
   int viz_wall_charge_frame_count;
-  std::map<int, std::string> high_scores;
+  int top_score;     // Best score of previous games, shown as TOP.
+  int start_score;   // Score at the start of the game (maxout trainer).
+  int floor_height;  // Bottom rows that are permanent and never cleared (garbage trainer).
 };
 
 inline bool entryDelay(const GameState<>& state) {

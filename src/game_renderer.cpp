@@ -3,6 +3,7 @@
 #include <iso646.h>
 
 #include <memory>
+#include <queue>
 #include <set>
 #include <sstream>
 
@@ -40,16 +41,80 @@ bool loadBlockSprites(const SpriteProvider &sprite_provider,
   return true;
 }
 
+// Returns a copy of `sprite` with everything outside the panels filled with `fill`. The panels are
+// the areas enclosed by the grey panel borders in `panel_layout`. The outside is found by flood
+// filling from the edges of the screen without crossing a border pixel.
+std::unique_ptr<olc::Sprite> removeBackgroundPattern(const olc::Sprite &panel_layout,
+                                                     olc::Sprite &sprite, const olc::Pixel &fill) {
+  const olc::Pixel panel_border{115, 115, 115};
+  const int width = panel_layout.width;
+  const int height = panel_layout.height;
+  std::vector<bool> outside(width * height, false);
+  std::queue<std::pair<int, int>> to_visit;
+  auto visit = [&](const int x, const int y) {
+    if (x < 0 || y < 0 || x >= width || y >= height || outside[y * width + x] ||
+        panel_layout.GetPixel(x, y) == panel_border) {
+      return;
+    }
+    outside[y * width + x] = true;
+    to_visit.push({x, y});
+  };
+  for (int x = 0; x < width; ++x) {
+    visit(x, 0);
+    visit(x, height - 1);
+  }
+  for (int y = 0; y < height; ++y) {
+    visit(0, y);
+    visit(width - 1, y);
+  }
+  while (not to_visit.empty()) {
+    const auto [x, y] = to_visit.front();
+    to_visit.pop();
+    visit(x + 1, y);
+    visit(x - 1, y);
+    visit(x, y + 1);
+    visit(x, y - 1);
+  }
+
+  std::unique_ptr<olc::Sprite> plain(sprite.Duplicate());
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if (outside[y * width + x]) {
+        plain->SetPixel(x, y, fill);
+      }
+    }
+  }
+  return plain;
+}
+
 GameRenderer::GameRenderer(std::unique_ptr<PixelDrawingInterface> &&drawer,
                            const std::shared_ptr<SpriteProvider> &sprite_provider,
                            const std::string &sprites_path)
     : drawer_(std::move(drawer)),
       sprite_provider_(sprite_provider),
       block_sprites_{},
-      background_rendered_{} {
+      background_rendered_{},
+      show_background_{true} {
   if (not loadBlockSprites(*sprite_provider_, block_sprites_)) {
     throw std::runtime_error("Failed loading block sprites.");
   }
+  const auto &panel_layout = *sprite_provider_->getSprite("basic-field-empty-black");
+  plain_background_ = removeBackgroundPattern(
+      panel_layout, *sprite_provider_->getSprite("basic-field-empty-black"), olc::BLACK);
+  plain_flash_background_ = removeBackgroundPattern(
+      panel_layout, *sprite_provider_->getSprite("basic-field-flash"), olc::Pixel{252, 252, 252});
+}
+
+void GameRenderer::setShowBackground(const bool show_background) {
+  show_background_ = show_background;
+}
+
+olc::Sprite *GameRenderer::getBackgroundSprite(const std::string &sprite_name) const {
+  if (show_background_) {
+    return sprite_provider_->getSprite(sprite_name);
+  }
+  return sprite_name == "basic-field-flash" ? plain_flash_background_.get()
+                                            : plain_background_.get();
 }
 
 void GameRenderer::startNewGame() {
@@ -69,7 +134,7 @@ void GameRenderer::renderText(const GameState<> &state, const Statistics &stats)
   constexpr pdi::Coords score_pos{192, 56};
   constexpr pdi::Coords level_pos{208, 160};
   drawNumber(*drawer_, lines_pos, state.lines, 3);
-  drawNumber(*drawer_, high_score_pos, state.high_scores.rbegin()->first, 7);
+  drawNumber(*drawer_, high_score_pos, std::max(state.top_score, state.score), 7);
   drawNumber(*drawer_, score_pos, state.score, 7);
   drawNumber(*drawer_, level_pos, state.level, 2);
 }
@@ -177,7 +242,7 @@ void GameRenderer::renderControls(const GameState<> &state, const KeyEvents &key
 
 void GameRenderer::renderBackground() {
   if (not background_rendered_) {
-    drawer_->drawSprite(0, 0, sprite_provider_->getSprite("basic-field-empty-black"));
+    drawer_->drawSprite(0, 0, getBackgroundSprite("basic-field-empty-black"));
     background_rendered_ = true;
   }
 }
@@ -185,9 +250,9 @@ void GameRenderer::renderBackground() {
 void GameRenderer::doTetrisFlash(const int &line_clear_frame_number) const {
   const auto &frame = line_clear_frame_number;
   if ((frame - 1) % 4 == 0) {
-    drawer_->drawSprite(0, 0, sprite_provider_->getSprite("basic-field-flash"));
+    drawer_->drawSprite(0, 0, getBackgroundSprite("basic-field-flash"));
   } else {
-    drawer_->drawSprite(0, 0, sprite_provider_->getSprite("basic-field-empty-black"));
+    drawer_->drawSprite(0, 0, getBackgroundSprite("basic-field-empty-black"));
   }
 }
 
@@ -223,7 +288,7 @@ void GameRenderer::renderTreyVisionStatistics(const GameState<> &state,
 
   drawer_->drawString(get_coords(1, 0), "TRT:   %");
   drawNumber(*drawer_, get_coords(1, 1),
-             static_cast<int>(statistics.getTetrisRate(state.score) * 100), 2);
+             static_cast<int>(statistics.getTetrisRate() * 100), 2);
 
   drawer_->drawSprite(get_coords(2, 0), sprite_provider_->getSprite("long-bar-drought"));
   drawNumber(*drawer_, get_coords(2, 1), statistics.getLongBarDrought(), 3);

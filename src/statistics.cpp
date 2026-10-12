@@ -1,6 +1,6 @@
 #include "statistics.hpp"
 
-#include "game_logic.hpp"
+#include <algorithm>
 
 namespace nestris_x86 {
 
@@ -14,15 +14,17 @@ Statistics::Statistics()
           {Tetromino::L, 0},       //
           {Tetromino::Line, 0}     //
       },
-  score_from_tetrises_{},
+  lines_from_tetrises_{},
+  lines_cleared_{},
   long_bar_drought_{},
   das_chain_counter_{},
   burn_counter_{}
 {}
 
 void Statistics::update(const int lines_cleared, const int level) {
+  lines_cleared_ += lines_cleared;
   if (lines_cleared == 4) {
-    score_from_tetrises_ += getScoreForLineClear(lines_cleared, level);
+    lines_from_tetrises_ += lines_cleared;
     burn_counter_ = 0;
   } else {
     burn_counter_ += lines_cleared;
@@ -43,8 +45,8 @@ int Statistics::getTetrominoCount(const Tetromino& tetromino) const {
   return tetromino_counts_.at(tetromino);
 }
 
-double Statistics::getTetrisRate(const int current_score) const {
-  return (double)score_from_tetrises_ / std::max(1, current_score);
+double Statistics::getTetrisRate() const {
+  return static_cast<double>(lines_from_tetrises_) / std::max(1, lines_cleared_);
 }
 
 int Statistics::getBurnCount() const {

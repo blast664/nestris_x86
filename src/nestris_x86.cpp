@@ -25,6 +25,7 @@ namespace nestris_x86 {
 
 constexpr int NTSC_frame_ns = static_cast<int>((1.0 / NTSC_FREQUENCY) * 1e9);
 const std::string CONFIG_PATH = "config.yaml";
+const std::string GAME_HISTORY_PATH = "game_history.csv";
 
 void registerAnalogAxesFromYamlConfig(const YAML::Node &node, InputInterface &input_device) try {
   for (const auto &axis_config : node) {
@@ -112,6 +113,7 @@ std::optional<KeyBindings> keyBindingsFromYaml(const YAML::Node &node) try {
 }
 
 void saveConfigToFile(const YAML::Node &game_options,       //
+                      const YAML::Node &game_modes,         //
                       const YAML::Node &keyboard_bindings,  //
                       const YAML::Node &gamepad_bindings,   //
                       const YAML::Node &axis_movements) {
@@ -121,6 +123,7 @@ void saveConfigToFile(const YAML::Node &game_options,       //
   }
   YAML::Node config;
   config["game_options"] = game_options;
+  config["game_modes"] = game_modes;
   config["keyboard_bindings"] = keyboard_bindings;
   config["gamepad_bindings"] = gamepad_bindings;
   config["register_analog_axis_as_dbutton"] = axis_movements;
@@ -146,10 +149,11 @@ NestrisX86::NestrisX86()
       gamepad_input_{std::make_shared<SdlGamePad>()},
       gamepad_key_bindings_{getDefaultGamePadBindings(*gamepad_input_)},
       game_options_{std::make_shared<GameOptions>()},
+      game_history_{std::make_shared<GameHistory>(GAME_HISTORY_PATH)},
       game_frame_processor_{std::make_shared<GameProcessor>(
           GameOptions{}, std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_)},
       level_menu_processor_{std::make_shared<LevelScreenProcessor>(
-          std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_)},
+          std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_, game_history_)},
       option_menu_processor_{std::make_shared<OptionScreenProcessor>(
           std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_)},
       keyboard_config_processor_{std::make_shared<KeyboardConfigProcessor>(
@@ -158,6 +162,12 @@ NestrisX86::NestrisX86()
       gamepad_config_processor_{std::make_shared<KeyboardConfigProcessor>(
           std::make_unique<OlcDrawer>(*this), sample_player_, gamepad_input_,
           gamepad_key_bindings_)},
+      lag_test_processor_{std::make_shared<LagTestProcessor>(
+          std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_)},
+      game_mode_processor_{std::make_shared<GameModeScreenProcessor>(
+          std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_)},
+      history_processor_{std::make_shared<HistoryScreenProcessor>(
+          std::make_unique<OlcDrawer>(*this), sample_player_, sprite_provider_, game_history_)},
       active_processor_{level_menu_processor_},
       key_states_{initializeKeyStatesFromBindings(keyboard_key_bindings_)},
       frame_end_{},
@@ -178,6 +188,9 @@ NestrisX86::NestrisX86()
   if (yaml_node.has_value()) {
     if ((*yaml_node)["game_options"]) {
       option_menu_processor_->setOptionsYaml((*yaml_node)["game_options"]);
+    }
+    if ((*yaml_node)["game_modes"]) {
+      game_mode_processor_->setOptionsYaml((*yaml_node)["game_modes"]);
     }
     if ((*yaml_node)["keyboard_bindings"]) {
       const auto key_bindings = keyBindingsFromYaml((*yaml_node)["keyboard_bindings"]);
@@ -206,6 +219,7 @@ NestrisX86::NestrisX86()
   } else {
     registerDefaultAxes(*gamepad_input_);
   }
+  level_menu_processor_->setGameMode(game_mode_processor_->getGameMode());
 }
 
 bool NestrisX86::OnUserCreate() {
@@ -222,9 +236,19 @@ bool NestrisX86::OnUserCreate() {
 bool NestrisX86::OnUserUpdate(float fElapsedTime) {
   const auto key_events = getKeyEvents();
   const auto signal = active_processor_->processFrame(key_events);
+  if (active_processor_ == game_frame_processor_) {
+    if (auto finished_game = game_frame_processor_->takeFinishedGame()) {
+      game_history_->add(*finished_game);
+    }
+  }
   processProgramFlowSignal(signal);
-  sleepUntilNextFrame(true);
   return not(GetKey(olc::Key::Q).bHeld || signal == ProgramFlowSignal::EndProgram);
+}
+
+// Sleep after the frame is presented rather than at the end of OnUserUpdate, so input is read
+// right before the frame is processed and the result is shown without waiting a frame.
+void NestrisX86::OnFramePresented() {
+  sleepUntilNextFrame(true);
 }
 
 TetrisType getGravityOption(const OptionInterface &option) {
@@ -257,6 +281,8 @@ GameOptions menuOptionsToGameOptions(const OptionScreenProcessor::OptionMap &opt
   options.statistics_mode =
       statisticsModeFromString(getStringOption(*option_map.at("statistics_mode")));
   options.rng_type = rngTypeFromString(getStringOption(*option_map.at("rng_type")));
+  options.run_ahead_frames = getIntOption(*option_map.at("run_ahead_frames"));
+  options.show_background = getBoolOption(*option_map.at("show_background"));
   return options;
 }
 
@@ -264,14 +290,19 @@ void NestrisX86::processProgramFlowSignal(const ProgramFlowSignal &signal) {
   if (signal == ProgramFlowSignal::StartGame) {
     auto options = menuOptionsToGameOptions(option_menu_processor_->getOptions());
     options.level = level_menu_processor_->getSelectedLevel();
+    options.game_mode = game_mode_processor_->getGameMode();
+    options.mode_setting = game_mode_processor_->getModeSetting();
+    options.top_score = game_history_->bestScore(options.game_mode, options.level);
     single_frame_ = Duration_ns{static_cast<int>((1.0 / options.game_frequency) * 1e9)};
     game_frame_processor_->reset(options);
     saveConfigToFile(option_menu_processor_->getOptionsAsYaml(),
+                     game_mode_processor_->getOptionsAsYaml(),
                      keyBindingsToYaml(keyboard_key_bindings_),
                      keyBindingsToYaml(gamepad_key_bindings_),
                      serializeRegisteredAxesToYaml(gamepad_input_->getRegisteredAxes()));
     active_processor_ = game_frame_processor_;
   } else if (signal == ProgramFlowSignal::LevelSelectorScreen) {
+    level_menu_processor_->setGameMode(game_mode_processor_->getGameMode());
     active_processor_ = level_menu_processor_;
   } else if (signal == ProgramFlowSignal::OptionsScreen) {
     if (active_processor_ == keyboard_config_processor_) {
@@ -284,8 +315,13 @@ void NestrisX86::processProgramFlowSignal(const ProgramFlowSignal &signal) {
     active_processor_ = keyboard_config_processor_;
   } else if (signal == ProgramFlowSignal::ControllerConfigScreen) {
     active_processor_ = gamepad_config_processor_;
-  } else if (signal == ProgramFlowSignal::NewHighScoreScreen) {
-    active_processor_ = level_menu_processor_;
+  } else if (signal == ProgramFlowSignal::LagTestScreen) {
+    active_processor_ = lag_test_processor_;
+  } else if (signal == ProgramFlowSignal::GameModesScreen) {
+    active_processor_ = game_mode_processor_;
+  } else if (signal == ProgramFlowSignal::HistoryScreen) {
+    history_processor_->setGameMode(game_mode_processor_->getGameMode());
+    active_processor_ = history_processor_;
   }
 }
 

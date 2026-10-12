@@ -29,15 +29,18 @@ class TetrominoRNG {
  public:
   virtual ~TetrominoRNG() = default;
   virtual Tetromino getRandomTetromino() = 0;
+  // Copies the generator including its state, so the same pieces can be generated again.
+  virtual std::unique_ptr<TetrominoRNG> clone() const = 0;
 };
 
 class UniformTetrominoRNG : public TetrominoRNG {
  public:
   UniformTetrominoRNG();
   Tetromino getRandomTetromino() override;
+  std::unique_ptr<TetrominoRNG> clone() const override;
 
  private:
-  std::random_device random_number_engine_;
+  std::mt19937 random_number_engine_;
   std::uniform_int_distribution<int> random_generator_;
 };
 
@@ -46,10 +49,11 @@ class NesTetrominoRNG : public TetrominoRNG {
  public:
   NesTetrominoRNG();
   Tetromino getRandomTetromino() override;
+  std::unique_ptr<TetrominoRNG> clone() const override;
 
  private:
   Tetromino biasedReroll();
-  std::random_device random_number_engine_;
+  std::mt19937 random_number_engine_;
   std::uniform_int_distribution<int> random_generator_8_;
   std::uniform_int_distribution<int> random_generator_56_;
   std::vector<Tetromino> biased_lookup_;
@@ -60,13 +64,41 @@ class SevenBagTetrominoRNG : public TetrominoRNG {
  public:
   SevenBagTetrominoRNG();
   Tetromino getRandomTetromino() override;
+  std::unique_ptr<TetrominoRNG> clone() const override;
 
  private:
   void shuffleBag();
 
-  std::random_device random_number_engine_;
+  std::mt19937 random_number_engine_;
   std::array<Tetromino, 7> seven_bag_;
   int idx_;
+};
+
+// Only long bars, for the quicktap trainer.
+class LongbarTetrominoRNG : public TetrominoRNG {
+ public:
+  Tetromino getRandomTetromino() override { return Tetromino::Line; }
+  std::unique_ptr<TetrominoRNG> clone() const override {
+    return std::make_unique<LongbarTetrominoRNG>(*this);
+  }
+};
+
+// Wraps another generator and keeps only `longbar_percent` percent of its long bars, for the
+// drought trainer. A dropped long bar is replaced by a random other piece, so the long bar rate is
+// exactly `longbar_percent` percent of the wrapped generator's rate.
+class DroughtTetrominoRNG : public TetrominoRNG {
+ public:
+  DroughtTetrominoRNG(std::unique_ptr<TetrominoRNG>&& base_rng, const int longbar_percent);
+  DroughtTetrominoRNG(const DroughtTetrominoRNG& other);
+  Tetromino getRandomTetromino() override;
+  std::unique_ptr<TetrominoRNG> clone() const override;
+
+ private:
+  std::unique_ptr<TetrominoRNG> base_rng_;
+  int longbar_percent_;
+  std::mt19937 random_number_engine_;
+  std::uniform_int_distribution<int> percent_generator_;
+  std::uniform_int_distribution<int> other_piece_generator_;
 };
 
 inline std::unique_ptr<TetrominoRNG> tetrominoRngFactory(const RngType& rng_type) {

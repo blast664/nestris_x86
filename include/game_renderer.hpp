@@ -29,6 +29,9 @@ class GameRenderer {
 
   void startNewGame();
 
+  // Show the patterned background around the panels, or plain black.
+  void setShowBackground(const bool show_background);
+
  private:
   template <typename GridContainer>
   void renderGrid(const int x_start, const int y_start, const GridContainer &grid, const int level,
@@ -50,6 +53,7 @@ class GameRenderer {
   void renderTreyVisionStatistics(const GameState<> &state, const Statistics &statistics);
 
   void renderBackground();
+  olc::Sprite *getBackgroundSprite(const std::string &sprite_name) const;
   void renderText(const GameState<> &state, const Statistics &stats) const;
   void renderNextTetromino(const Tetromino &next_tetromino, const int level) const;
   void renderDasBar(const int das_counter, const Das &das_processor,
@@ -63,6 +67,9 @@ class GameRenderer {
   std::shared_ptr<SpriteProvider> sprite_provider_;
   std::vector<std::vector<std::unique_ptr<olc::Sprite>>> block_sprites_;
   bool background_rendered_;
+  bool show_background_;
+  std::unique_ptr<olc::Sprite> plain_background_;
+  std::unique_ptr<olc::Sprite> plain_flash_background_;
 };
 
 }  // namespace nestris_x86

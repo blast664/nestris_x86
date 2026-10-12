@@ -20,7 +20,11 @@ class SoundPlayer {
 
   bool playSample(const std::string& sample_name) const;
 
+  // While muted, playSample does nothing. Used for frames that are only simulated, not shown.
+  void setMuted(const bool muted) { muted_ = muted; }
+
  private:
   std::map<std::string, std::unique_ptr<Mix_Chunk>> samples_;
+  bool muted_{};
 };
 }  // namespace sound

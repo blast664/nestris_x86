@@ -113,7 +113,7 @@ Enables/disables wall kicks.
 - NES - The tetromino counts as in the original tetris game
 - Trey V - 'Trey Vision' - these are the statistics that are to be seen in a typical CTWC match, plus a few others:
   - BURN - How many lines have been cleared from singles, doubles or triples since the last tetris
-  - TRT - Tetris rate - The percentage of the score that comes from scoring tetrises
+  - TRT - Tetris rate - The percentage of cleared lines that were cleared with tetrises
   - Long bar drought - How many pieces since that last long bar
   - DAS - DAS chain - This is a counter of how many pieces that are dropped without reseting the das counter to zero
   - ENTRY DL - Entry delay - This goes green when the entry delay, aka 'ARE' is active. During this time one may redirect DAS without resetting it

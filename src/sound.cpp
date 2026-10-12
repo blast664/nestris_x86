@@ -47,6 +47,9 @@ bool SoundPlayer::playSample(const std::string& sample_name) const {
     LOG_ERROR("No sample found for identifier `" << sample_name << "`.");
     return false;
   }
+  if (muted_) {
+    return true;
+  }
   Mix_PlayChannel(-1, samples_.at(sample_name).get(), 0);
   return true;
 }

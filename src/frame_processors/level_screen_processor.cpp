@@ -1,24 +1,51 @@
 
 #include "frame_processors/level_screen_processor.hpp"
 
+#include <algorithm>
+
 #include "drawers/pixel_drawing_interface.hpp"
 #include "drawing_utils.hpp"
 
 namespace nestris_x86 {
 
+namespace {
+
+// The menu next to the level selector.
+const std::vector<std::pair<std::string, ProgramFlowSignal>> MENU_ITEMS{
+    {"OPTIONS", ProgramFlowSignal::OptionsScreen},
+    {"MODES", ProgramFlowSignal::GameModesScreen},
+    {"HISTORY", ProgramFlowSignal::HistoryScreen}};
+constexpr int MENU_X = 157;
+constexpr int MENU_Y = 80;
+constexpr int MENU_ROW_HEIGHT = 12;
+
+}  // namespace
+
 ProgramFlowSignal LevelScreenProcessor::processKeyEvents(const KeyEvents& key_events) {
   auto& level = level_;
-  if (options_selected_) {
+  const auto& a_button = key_events.at(KeyAction::RotateClockwise);
+  a_held_ = a_button.pressed || a_button.held;
+  if (menu_item_ >= 0) {
+    const int num_items = static_cast<int>(MENU_ITEMS.size());
     if (key_events.at(KeyAction::Left).pressed) {
       sample_player_->playSample("menu_blip");
-      options_selected_ = false;
+      menu_item_ = -1;
       return ProgramFlowSignal::FrameSuccess;
+    }
+    if (key_events.at(KeyAction::Up).pressed) {
+      sample_player_->playSample("menu_blip");
+      menu_item_ = (menu_item_ + num_items - 1) % num_items;
+    }
+    if (key_events.at(KeyAction::Down).pressed) {
+      sample_player_->playSample("menu_blip");
+      menu_item_ = (menu_item_ + 1) % num_items;
     }
     if (key_events.at(KeyAction::RotateClockwise).pressed ||
         key_events.at(KeyAction::Start).pressed) {
       sample_player_->playSample("menu_select_02");
-      return ProgramFlowSignal::OptionsScreen;
+      return MENU_ITEMS.at(menu_item_).second;
     }
+    return ProgramFlowSignal::FrameSuccess;
   }
 
   if (key_events.at(KeyAction::Start).pressed) {
@@ -33,7 +60,7 @@ ProgramFlowSignal LevelScreenProcessor::processKeyEvents(const KeyEvents& key_ev
   }
   if (key_events.at(KeyAction::Right).pressed) {
     if (level == 4 || level == 9) {
-      options_selected_ = true;
+      menu_item_ = 0;
     } else {
       ++level;
     }
@@ -53,12 +80,16 @@ ProgramFlowSignal LevelScreenProcessor::processKeyEvents(const KeyEvents& key_ev
 
 LevelScreenProcessor::LevelScreenProcessor(std::unique_ptr<PixelDrawingInterface>&& drawer,
                                            const std::shared_ptr<sound::SoundPlayer>& sample_player,
-                                           const std::shared_ptr<SpriteProvider>& sprite_provider)
+                                           const std::shared_ptr<SpriteProvider>& sprite_provider,
+                                           const std::shared_ptr<const GameHistory>& history)
     : drawer_(std::move(drawer)),
       sample_player_(sample_player),
       sprite_provider_(sprite_provider),
+      history_(history),
+      game_mode_{GameMode::Normal},
       level_{},
-      options_selected_{},
+      a_held_{},
+      menu_item_{-1},
       plus_ten_levels_{},
       frame_counter_{std::make_unique<std::atomic_int>(0)} {}
 
@@ -70,21 +101,65 @@ void LevelScreenProcessor::renderMenu() const {
   // Clear the top area.
   drawer_->fillRect(30, 72, 190, 50, PixelDrawingInterface::BLACK());
 
-  drawer_->drawString(157, 80, "OPTIONS");
+  for (size_t i = 0; i < MENU_ITEMS.size(); ++i) {
+    drawer_->drawString(MENU_X, MENU_Y + static_cast<int>(i) * MENU_ROW_HEIGHT,
+                        MENU_ITEMS[i].first);
+  }
 
-  drawer_->drawString(72, 153, "JDMFX  1439173 30");
-  drawer_->drawString(72, 169, "KORYAN 1273120 29");
-  drawer_->drawString(72, 185, "JONAS  1245200 29");
+  renderTitle();
+  renderBestScores();
 
-  if (options_selected_) {
+  if (menu_item_ >= 0) {
     const auto color =
         (*frame_counter_) % 4 ? PixelDrawingInterface::WHITE() : PixelDrawingInterface::BLACK();
-    drawTriangleSelector(*drawer_, 148, 80, 7, color, false);
-    drawTriangleSelector(*drawer_, 219, 80, 7, color, true);
+    const int y = MENU_Y + menu_item_ * MENU_ROW_HEIGHT;
+    drawTriangleSelector(*drawer_, MENU_X - 9, y, 7, color, false);
+    drawTriangleSelector(*drawer_, 219, y, 7, color, true);
     renderLevelSelector(-1);
   } else {
     renderLevelSelector(level_);
   }
+}
+
+void LevelScreenProcessor::renderTitle() const {
+  // The background shows A-TYPE, which is replaced by the name of a trainer mode. The background
+  // is drawn again when the screen is entered, which restores A-TYPE.
+  if (game_mode_ == GameMode::Normal) {
+    return;
+  }
+  const auto name = gameModeToString(game_mode_);
+  drawer_->fillRect(92, 13, 72, 16, PixelDrawingInterface::BLACK());
+  drawer_->drawString(128 - static_cast<int>(name.size()) * 4, 17, name);
+}
+
+void LevelScreenProcessor::renderBestScores() const {
+  // The best scores of games started at the selected level, or ten levels higher while A is held.
+  const int start_level = level_ + (a_held_ ? 10 : 0);
+  const std::string title = "BEST FROM LEVEL " + std::to_string(start_level);
+  drawer_->fillRect(40, 117, 176, 10, PixelDrawingInterface::BLACK());
+  drawer_->drawString(128 - static_cast<int>(title.size()) * 4, 119, title);
+
+  // Replace the NAME column header of the background with LINES.
+  drawer_->fillRect(72, 136, 48, 9, PixelDrawingInterface::BLACK());
+  drawer_->drawString(72, 137, "LINES");
+
+  // Clear the rows, as the selected level changes.
+  drawer_->fillRect(72, 152, 137, 42, PixelDrawingInterface::BLACK());
+  auto games = history_->scoredGames(game_mode_, start_level);
+  std::sort(games.begin(), games.end(),
+            [](const GameRecord& a, const GameRecord& b) { return a.score > b.score; });
+  constexpr int first_row_y = 153;
+  constexpr int row_height = 16;
+  for (size_t i = 0; i < std::min<size_t>(3, games.size()); ++i) {
+    const int y = first_row_y + static_cast<int>(i) * row_height;
+    drawNumber(*drawer_, 80, y, games[i].lines, 3);
+    drawNumber(*drawer_, 128, y, games[i].score, 7);
+    drawNumber(*drawer_, 192, y, games[i].end_level, 2);
+  }
+}
+
+void LevelScreenProcessor::setGameMode(const GameMode& mode) {
+  game_mode_ = mode;
 }
 
 void LevelScreenProcessor::renderLevelSelector(const int level) const {

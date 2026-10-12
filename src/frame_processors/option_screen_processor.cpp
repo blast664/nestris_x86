@@ -37,6 +37,7 @@ OptionScreenProcessor::OptionScreenProcessor(
       frame_counter_{std::make_unique<std::atomic_int>(0)} {
   options_["configure_keyboard"] = std::make_unique<DummyOption>("CONFIGURE KEYBOARD");
   options_["configure_controller"] = std::make_unique<DummyOption>("CONFIGURE CONTROLLER");
+  options_["lag_test"] = std::make_unique<DummyOption>("LAG TEST");
 
   options_["das_profile"] = std::make_unique<StringOption>(
       "DAS PROFILE", std::vector<std::string>{"NTSC", "PAL", "NONE", "FULL", "CUSTOM"});
@@ -59,12 +60,16 @@ OptionScreenProcessor::OptionScreenProcessor(
       std::make_unique<StringOption>("STATISTICS", std::vector<std::string>{"NES", "TREY V"});
   options_["show_das_meter"] = std::make_unique<BoolOption>("SHOW DAS METER", false);
   options_["show_controls"] = std::make_unique<BoolOption>("SHOW CONTROLS", false);
+  options_["show_background"] = std::make_unique<BoolOption>("BACKGROUND", true);
 
   options_["rng_type"] =
       std::make_unique<StringOption>("RNG TYPE", std::vector<std::string>{"NES", "UNIF", "7BAG"});
 
+  options_["run_ahead_frames"] = std::make_unique<IntOption>("RUN AHEAD FRAMES", 0, 6, 0);
+
   option_order_ = std::vector<std::string>({"configure_keyboard",        //
                                             "configure_controller",      //
+                                            "lag_test",                  //
                                             "das_profile",               //
                                             "refresh_frequency",         //
                                             "das_initial_delay_frames",  //
@@ -75,7 +80,9 @@ OptionScreenProcessor::OptionScreenProcessor(
                                             "statistics_mode",           //
                                             "show_das_meter",            //
                                             "show_controls",             //
-                                            "rng_type"});                //
+                                            "show_background",           //
+                                            "rng_type",                  //
+                                            "run_ahead_frames"});        //
 
   for (const auto& name : option_order_) {
     if (not options_.count(name)) {
@@ -120,6 +127,9 @@ ProgramFlowSignal OptionScreenProcessor::processKeyEvents(const KeyEvents& key_e
     } else if (option_order_.at(selected_index_) == "configure_controller") {
       sample_player_->playSample("menu_select_02");
       return ProgramFlowSignal::ControllerConfigScreen;
+    } else if (option_order_.at(selected_index_) == "lag_test") {
+      sample_player_->playSample("menu_select_02");
+      return ProgramFlowSignal::LagTestScreen;
     }
   }
 
@@ -180,7 +190,7 @@ std::vector<int> OptionScreenProcessor::renderOptions(const std::set<int>& space
     }
     y_row += 10;
     if (spacers.count(counter++)) {
-      y_row += 5;
+      y_row += 4;
     }
   }
   return row_locations;
@@ -211,9 +221,9 @@ void OptionScreenProcessor::renderOptionScreen() const {
   // drawer_->fillRect(30, 30, 197, 180, PixelDrawingInterface::BLACK());
   constexpr int x_left_column = 32;
   constexpr int x_right_column = 180;
-  constexpr int y_row_start = 40;
+  constexpr int y_row_start = 36;
 
-  std::set<int> spacers{1, 6, 8, 11};
+  std::set<int> spacers{2, 7, 9, 13};
   const auto row_locations =
       renderOptions(spacers, x_left_column, x_right_column, y_row_start, grey_out_das_options_);
   renderSelector(x_right_column - 5, row_locations);

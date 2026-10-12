@@ -23,7 +23,7 @@ class OptionInterface {
   virtual void selectLastOption() = 0;
   virtual void setOptionFromString(const std::string& val) = 0;
   virtual std::string getSelectedOptionText() const = 0;
-  std::string getDisplayName() { return display_name_; }
+  std::string getDisplayName() const { return display_name_; }
   void selectNextOptionWrapAround() {
     if (not this->nextOptionAvailable()) {
       selectFirstOption();
@@ -103,22 +103,23 @@ inline std::string getStringOption(const OptionInterface& option) {
 class IntOption : public OptionInterface {
  public:
   IntOption(const std::string& display_name, const int min_val, const int max_val,
-            const int default_val)
+            const int default_val, const int step = 1)
       : OptionInterface(display_name),
         min_value_(min_val),
         max_value_(max_val),
-        value_(default_val) {}
+        value_(default_val),
+        step_(step) {}
 
   bool nextOptionAvailable() const override { return value_ < max_value_; }
   bool prevOptionAvailable() const override { return value_ > min_value_; }
   void selectNextOption() override {
     if (nextOptionAvailable()) {
-      ++value_;
+      value_ = std::min(value_ + step_, max_value_);
     }
   }
   void selectPrevOption() override {
     if (prevOptionAvailable()) {
-      --value_;
+      value_ = std::max(value_ - step_, min_value_);
     }
   }
   void selectFirstOption() override { value_ = min_value_; }
@@ -139,6 +140,7 @@ class IntOption : public OptionInterface {
   int min_value_;
   int max_value_;
   int value_;
+  int step_;
 };
 
 inline int getIntOption(const OptionInterface& option) {

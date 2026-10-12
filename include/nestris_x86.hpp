@@ -5,10 +5,14 @@
 
 #include "assets.hpp"
 #include "frame_processors/frame_processor_interface.hpp"
+#include "frame_processors/game_mode_screen_processor.hpp"
 #include "frame_processors/game_processor.hpp"
+#include "frame_processors/history_screen_processor.hpp"
 #include "frame_processors/keyboard_config_processor.hpp"
+#include "frame_processors/lag_test_processor.hpp"
 #include "frame_processors/level_screen_processor.hpp"
 #include "frame_processors/option_screen_processor.hpp"
+#include "game_history.hpp"
 #include "game_states.hpp"
 #include "input_devices/input_interface.hpp"
 #include "key_defines.hpp"
@@ -29,8 +33,11 @@ class NestrisX86 : public olc::PixelGameEngine {
 
   bool OnUserUpdate(float fElapsedTime) override;
 
+  void OnFramePresented() override;
+
  private:
   void processProgramFlowSignal(const ProgramFlowSignal& signal);
+
 
   void sleepUntilNextFrame(const bool debug = false);
 
@@ -43,11 +50,15 @@ class NestrisX86 : public olc::PixelGameEngine {
   KeyBindings keyboard_key_bindings_;
   KeyBindings gamepad_key_bindings_;
   std::shared_ptr<GameOptions> game_options_;
+  std::shared_ptr<GameHistory> game_history_;
   std::shared_ptr<GameProcessor> game_frame_processor_;
   std::shared_ptr<LevelScreenProcessor> level_menu_processor_;
   std::shared_ptr<OptionScreenProcessor> option_menu_processor_;
   std::shared_ptr<KeyboardConfigProcessor> keyboard_config_processor_;
   std::shared_ptr<KeyboardConfigProcessor> gamepad_config_processor_;
+  std::shared_ptr<LagTestProcessor> lag_test_processor_;
+  std::shared_ptr<GameModeScreenProcessor> game_mode_processor_;
+  std::shared_ptr<HistoryScreenProcessor> history_processor_;
   std::shared_ptr<FrameProcessorInterface> active_processor_;
   KeyStates key_states_;
   std::chrono::time_point<std::chrono::high_resolution_clock> frame_end_;

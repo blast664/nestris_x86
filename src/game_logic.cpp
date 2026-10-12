@@ -14,7 +14,8 @@ int getScoreForLineClear(const int lines_cleared, const int level) {
   if (lines_cleared > 4) {
     throw std::runtime_error("Too many simultaneous lines cleared to get a score.");
   }
-  return level * line_scores[lines_cleared];
+  // As on the NES, the points are multiplied by the level plus one.
+  return (level + 1) * line_scores[lines_cleared];
 }
 
 GameState<>::Grid addTetrominoToGrid(const GameState<>::Grid &grid,
@@ -192,7 +193,8 @@ std::vector<int> checkForLineClears(const GameState<> &state) {
     }
     return true;
   };
-  for (int y = 0; y < state.grid[0].size(); ++y) {
+  const int rows_above_floor = static_cast<int>(state.grid[0].size()) - state.floor_height;
+  for (int y = 0; y < rows_above_floor; ++y) {
     if (is_line_complete(state.grid, y)) {
       complete_lines.push_back(y);
     }
@@ -200,11 +202,10 @@ std::vector<int> checkForLineClears(const GameState<> &state) {
   return complete_lines;
 }
 
-void updateEntryDelayForLineClear(int &delay_counter) {
+void updateEntryDelayForLineClear(int &delay_counter, std::mt19937 &random_engine) {
   // Emulate a quirk in the nes implementation: The animation would only
   // start on certain frames, randomly increasing/decreasing the ARE.
-  // TODO:: -use modern c++ random and hold the random seed in class state
-  delay_counter += (17 + (rand() % 5));
+  delay_counter += 17 + std::uniform_int_distribution<int>{0, 4}(random_engine);
 }
 
 void updateScoreAndLevel(const int line_clears, const sound::SoundPlayer &sound_player,

@@ -20,7 +20,11 @@ const std::string CSV_HEADER =
 std::string currentTimestamp() {
   const std::time_t now = std::time(nullptr);
   std::tm local_time{};
+#ifdef _WIN32
+  localtime_s(&local_time, &now);
+#else
   localtime_r(&now, &local_time);
+#endif
   std::ostringstream ss;
   ss << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S");
   return ss.str();
